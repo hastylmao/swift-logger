@@ -15,21 +15,23 @@ import {
   Calendar,
   Utensils,
   Droplets,
-  ImageIcon,
-  MessageSquare
+  MessageSquare,
+  Activity
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { cn } from '@/utils/cn';
-import { UserProfile, DailyLog } from '@/types';
+import { UserProfile, DailyLog, Exercise } from '@/types';
 import { format, parseISO } from 'date-fns';
+// We import exercises to map IDs to muscle groups
+import { exercises } from '@/data/exercises';
 
 interface PublicProfile {
   id: string;
   username: string;
   bio?: string;
   profile_data?: UserProfile;
-  logs?: Record<string, DailyLog>; // Added this to store the actual history
+  logs?: Record<string, DailyLog>;
   stats?: {
     totalWorkouts: number;
     totalSets: number;
@@ -85,7 +87,6 @@ export function CompareView() {
     
     setIsSearching(true);
     try {
-      // Fetch user_data (which contains the JSON logs)
       const { data, error } = await supabase
         .from('user_data')
         .select('*')
@@ -99,7 +100,6 @@ export function CompareView() {
         const userProfile = userData.profile || {};
         const userLogs = (userData.logs || {}) as Record<string, DailyLog>;
 
-        // Calculate Stats
         const stats = {
           totalWorkouts: Object.values(userLogs).reduce((sum: number, log: any) => sum + (log.workouts?.length || 0), 0),
           totalSets: Object.values(userLogs).reduce((sum: number, log: any) => 
@@ -131,7 +131,7 @@ export function CompareView() {
           bio: userProfile.bio,
           profile_data: userProfile,
           privacy: userProfile.privacy,
-          logs: userLogs, // Pass the logs to the view
+          logs: userLogs,
           stats: stats
         };
       });
@@ -298,7 +298,6 @@ export function CompareView() {
   );
 }
 
-// ... StatCard component remains same ...
 function StatCard({ icon, label, value, color }: { icon: any, label: string, value: string | number, color: any }) {
   const colorClasses: any = {
     purple: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
@@ -333,7 +332,24 @@ function UserProfileModal({ user, isFollowing, onFollow, onClose, myStats }: Use
   const userStats = user.stats || { totalWorkouts: 0, totalSets: 0, currentStreak: 0, totalVolume: 0 };
   const canShowWorkouts = user.privacy?.showWorkouts !== false;
   const canShowNutrition = user.privacy?.showNutrition !== false;
-  const canShowPhotos = user.privacy?.showPhotos !== false;
+
+  // Helper to determine muscle groups hit from exercises
+  const getMusclesHit = (workoutExercises: any[]) => {
+    const muscles = new Set<string>();
+    workoutExercises.forEach(w => {
+      // Find exercise in database to get muscle group
+      const exerciseDef = exercises.find(e => e.name === w.exerciseName || e.id === w.exerciseId);
+      if (exerciseDef) {
+        muscles.add(exerciseDef.muscleGroup);
+      } else {
+        // Fallback or guess based on name
+        if (w.exerciseName.toLowerCase().includes('bench')) muscles.add('Chest');
+        if (w.exerciseName.toLowerCase().includes('squat')) muscles.add('Legs');
+        if (w.exerciseName.toLowerCase().includes('curl')) muscles.add('Biceps');
+      }
+    });
+    return Array.from(muscles);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center">
@@ -407,71 +423,112 @@ function UserProfileModal({ user, isFollowing, onFollow, onClose, myStats }: Use
               <p className="text-slate-500 text-center py-4">No logs available.</p>
             ) : (
               <div className="space-y-4">
-                {sortedLogs.map(([date, log]) => (
-                  <div key={date} className="bg-slate-800/40 rounded-xl p-4 border border-slate-800">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-white font-medium">
-                        {format(parseISO(date), 'EEEE, MMM d')}
-                      </h4>
-                      {/* Only show "Workout" badge if they actually worked out */}
-                      {log.workouts.length > 0 && canShowWorkouts && (
-                        <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full">
-                          Workout
-                        </span>
-                      )}
-                    </div>
+                {sortedLogs.map(([date, log]) => {
+                  const dailyCalories = log.meals.reduce((acc, m) => acc + m.calories, 0);
+                  const dailyProtein = log.meals.reduce((acc, m) => acc + m.protein, 0);
+                  const dailyCarbs = log.meals.reduce((acc, m) => acc + m.carbs, 0);
+                  const dailyFat = log.meals.reduce((acc, m) => acc + m.fat, 0);
+                  const musclesHit = getMusclesHit(log.workouts);
 
-                    <div className="space-y-3">
-                      {/* Workouts */}
-                      {canShowWorkouts && log.workouts.length > 0 && (
-                        <div className="space-y-2">
-                          {log.workouts.map((w, i) => (
-                            <div key={i} className="bg-slate-900/50 p-2 rounded-lg text-sm">
-                              <div className="text-purple-300 font-medium mb-1">{w.exerciseName}</div>
-                              <div className="text-slate-400 text-xs">
-                                {w.sets.length} sets • Max: {Math.max(...w.sets.map(s => s.weight))}kg
+                  return (
+                    <div key={date} className="bg-slate-800/40 rounded-xl p-4 border border-slate-800">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-white font-medium">
+                          {format(parseISO(date), 'EEEE, MMM d')}
+                        </h4>
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* 1. MUSCLES HIT TAGS */}
+                        {canShowWorkouts && musclesHit.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {musclesHit.map(m => (
+                              <span key={m} className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full border border-purple-500/30">
+                                {m}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 2. WORKOUT DETAILS */}
+                        {canShowWorkouts && log.workouts.length > 0 && (
+                          <div className="space-y-2 bg-slate-900/40 rounded-lg p-3">
+                            <h5 className="text-xs text-slate-400 uppercase tracking-wider font-bold flex items-center gap-1">
+                              <Dumbbell className="w-3 h-3" /> Workout
+                            </h5>
+                            {log.workouts.map((w, i) => (
+                              <div key={i} className="text-sm">
+                                <div className="text-purple-300 font-medium">{w.exerciseName}</div>
+                                <div className="text-slate-400 text-xs mt-1 flex flex-wrap gap-2">
+                                  {w.sets.map((set, sIdx) => (
+                                    <span key={sIdx} className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">
+                                      {set.weight}kg × {set.reps}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
 
-                      {/* Nutrition (Meals + Water) */}
-                      {canShowNutrition && (log.meals.length > 0 || log.waterIntake > 0) && (
-                        <div className="flex gap-2 text-xs">
-                           {log.meals.length > 0 && (
-                             <div className="bg-green-500/10 text-green-400 px-2 py-1 rounded-md flex items-center gap-1">
-                               <Utensils className="w-3 h-3" />
-                               {log.meals.reduce((acc, m) => acc + m.calories, 0)} kcal
+                        {/* 3. NUTRITION DETAILS */}
+                        {canShowNutrition && (log.meals.length > 0 || log.waterIntake > 0) && (
+                          <div className="space-y-2 bg-slate-900/40 rounded-lg p-3">
+                             <h5 className="text-xs text-slate-400 uppercase tracking-wider font-bold flex items-center gap-1">
+                               <Utensils className="w-3 h-3" /> Nutrition
+                             </h5>
+                             
+                             {/* Daily Totals */}
+                             <div className="grid grid-cols-4 gap-2 mb-3">
+                               <div className="bg-slate-800 p-2 rounded text-center">
+                                 <div className="text-xs text-slate-400">Cals</div>
+                                 <div className="text-white font-bold">{dailyCalories}</div>
+                               </div>
+                               <div className="bg-slate-800 p-2 rounded text-center">
+                                 <div className="text-xs text-slate-400">Prot</div>
+                                 <div className="text-emerald-400 font-bold">{dailyProtein}g</div>
+                               </div>
+                               <div className="bg-slate-800 p-2 rounded text-center">
+                                 <div className="text-xs text-slate-400">Carbs</div>
+                                 <div className="text-amber-400 font-bold">{dailyCarbs}g</div>
+                               </div>
+                               <div className="bg-slate-800 p-2 rounded text-center">
+                                 <div className="text-xs text-slate-400">Fat</div>
+                                 <div className="text-rose-400 font-bold">{dailyFat}g</div>
+                               </div>
                              </div>
-                           )}
-                           {log.waterIntake > 0 && (
-                             <div className="bg-cyan-500/10 text-cyan-400 px-2 py-1 rounded-md flex items-center gap-1">
-                               <Droplets className="w-3 h-3" />
-                               {log.waterIntake}ml
-                             </div>
-                           )}
-                        </div>
-                      )}
 
-                      {/* Notes */}
-                      {log.notes && (
-                        <div className="bg-amber-500/5 p-2 rounded-lg text-xs text-amber-200/80 italic flex gap-2">
-                           <MessageSquare className="w-3 h-3 mt-0.5 shrink-0" />
-                           "{log.notes}"
-                        </div>
-                      )}
+                             {/* Individual Meals */}
+                             {log.meals.map((meal, mIdx) => (
+                               <div key={mIdx} className="text-xs border-l-2 border-slate-700 pl-2 py-1">
+                                 <div className="text-slate-300 font-medium">{meal.description}</div>
+                                 <div className="text-slate-500">
+                                   {meal.calories}kcal • P: {meal.protein} C: {meal.carbs} F: {meal.fat}
+                                 </div>
+                               </div>
+                             ))}
 
-                      {/* Privacy Notice */}
-                      {(!canShowWorkouts && log.workouts.length > 0) || 
-                       (!canShowNutrition && (log.meals.length > 0 || log.waterIntake > 0)) ? (
-                        <div className="text-xs text-slate-600 italic">
-                          Some details are hidden by user privacy settings.
-                        </div>
-                      ) : null}
+                             {/* Water */}
+                             {log.waterIntake > 0 && (
+                               <div className="flex items-center gap-2 text-xs text-cyan-400 mt-2 pt-2 border-t border-slate-800">
+                                 <Droplets className="w-3 h-3" />
+                                 <span>Water Intake: <b>{log.waterIntake}ml</b></span>
+                               </div>
+                             )}
+                          </div>
+                        )}
+
+                        {/* Notes */}
+                        {log.notes && (
+                          <div className="bg-amber-500/5 p-2 rounded-lg text-xs text-amber-200/80 italic flex gap-2">
+                             <MessageSquare className="w-3 h-3 mt-0.5 shrink-0" />
+                             "{log.notes}"
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
