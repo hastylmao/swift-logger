@@ -11,22 +11,30 @@ import {
   X,
   Check,
   ChevronRight,
-  User as UserIcon
+  User as UserIcon,
+  Calendar,
+  Utensils,
+  Droplets,
+  ImageIcon,
+  MessageSquare
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { cn } from '@/utils/cn';
 import { UserProfile, DailyLog } from '@/types';
+import { format, parseISO } from 'date-fns';
 
 interface PublicProfile {
   id: string;
   username: string;
   bio?: string;
   profile_data?: UserProfile;
+  logs?: Record<string, DailyLog>; // Added this to store the actual history
   stats?: {
     totalWorkouts: number;
     totalSets: number;
     currentStreak: number;
+    totalVolume: number;
   };
   privacy?: {
     showWorkouts: boolean;
@@ -46,7 +54,7 @@ export function CompareView() {
   const [followers, _setFollowers] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'search' | 'following' | 'followers'>('search');
 
-  // Calculate current user stats
+  // Calculate local user stats
   const myStats = {
     totalWorkouts: Object.values(logs).reduce((sum, log) => sum + log.workouts.length, 0),
     totalSets: Object.values(logs).reduce((sum, log) => 
@@ -77,7 +85,7 @@ export function CompareView() {
     
     setIsSearching(true);
     try {
-      // FIX: Query 'user_data' table and search inside the JSON column
+      // Fetch user_data (which contains the JSON logs)
       const { data, error } = await supabase
         .from('user_data')
         .select('*')
@@ -86,17 +94,19 @@ export function CompareView() {
 
       if (error) throw error;
       
-      // FIX: Map the JSON data to the PublicProfile format
       const results = (data || []).map((row: any) => {
         const userData = row.data || {};
         const userProfile = userData.profile || {};
         const userLogs = (userData.logs || {}) as Record<string, DailyLog>;
 
-        // Calculate real stats for the user
+        // Calculate Stats
         const stats = {
           totalWorkouts: Object.values(userLogs).reduce((sum: number, log: any) => sum + (log.workouts?.length || 0), 0),
           totalSets: Object.values(userLogs).reduce((sum: number, log: any) => 
             sum + (log.workouts?.reduce((s: number, w: any) => s + (w.sets?.length || 0), 0) || 0), 0),
+          totalVolume: Object.values(userLogs).reduce((sum: number, log: any) => 
+            sum + (log.workouts?.reduce((s: number, w: any) => 
+              s + (w.sets?.reduce((v: number, set: any) => v + (set.weight * set.reps), 0) || 0), 0) || 0), 0),
           currentStreak: (() => {
             let streak = 0;
             const today = new Date();
@@ -116,11 +126,12 @@ export function CompareView() {
         };
 
         return {
-          id: row.user_id, // Use user_id from the row
+          id: row.user_id,
           username: userProfile.username || 'Unknown',
           bio: userProfile.bio,
           profile_data: userProfile,
           privacy: userProfile.privacy,
+          logs: userLogs, // Pass the logs to the view
           stats: stats
         };
       });
@@ -140,7 +151,6 @@ export function CompareView() {
     } else {
       setFollowing([...following, userId]);
     }
-    // In production, this would save to Supabase
   };
 
   if (!isSupabaseConfigured()) {
@@ -152,20 +162,6 @@ export function CompareView() {
           <p className="text-slate-400 text-sm mb-4">
             To compare progress with friends, set up your profile with a username and connect to Supabase.
           </p>
-          <p className="text-slate-500 text-xs">
-            Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables.
-          </p>
-        </div>
-
-        {/* My Stats (still show local stats) */}
-        <div className="bg-gradient-to-br from-cyan-500/20 via-slate-900 to-slate-900 rounded-2xl p-5 border border-cyan-500/30">
-          <h3 className="text-white font-semibold mb-4">My Stats</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <StatCard icon={<Dumbbell className="w-4 h-4" />} label="Workouts" value={myStats.totalWorkouts} color="purple" />
-            <StatCard icon={<Target className="w-4 h-4" />} label="Total Sets" value={myStats.totalSets} color="cyan" />
-            <StatCard icon={<Trophy className="w-4 h-4" />} label="Volume" value={`${(myStats.totalVolume / 1000).toFixed(1)}k`} color="amber" />
-            <StatCard icon={<Flame className="w-4 h-4" />} label="Streak" value={myStats.currentStreak} color="orange" />
-          </div>
         </div>
       </div>
     );
@@ -226,7 +222,6 @@ export function CompareView() {
       {/* Search Tab */}
       {activeTab === 'search' && (
         <div className="space-y-4">
-          {/* Search Input */}
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -248,7 +243,6 @@ export function CompareView() {
             </button>
           </div>
 
-          {/* Search Results */}
           {searchResults.length > 0 && (
             <div className="space-y-2">
               <p className="text-slate-400 text-sm">{searchResults.length} users found</p>
@@ -275,50 +269,6 @@ export function CompareView() {
                 </button>
               ))}
             </div>
-          )}
-
-          {searchTerm && searchResults.length === 0 && !isSearching && (
-            <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 text-center">
-              <p className="text-slate-400">No users found matching "{searchTerm}"</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Following Tab */}
-      {activeTab === 'following' && (
-        <div className="space-y-2">
-          {following.length === 0 ? (
-            <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 text-center">
-              <UserPlus className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-400">You're not following anyone yet</p>
-              <p className="text-slate-500 text-sm">Search for friends to follow them!</p>
-            </div>
-          ) : (
-            following.map((userId) => (
-              <div key={userId} className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                <p className="text-white">User ID: {userId}</p>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Followers Tab */}
-      {activeTab === 'followers' && (
-        <div className="space-y-2">
-          {followers.length === 0 ? (
-            <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 text-center">
-              <Users className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-400">No followers yet</p>
-              <p className="text-slate-500 text-sm">Share your username with friends!</p>
-            </div>
-          ) : (
-            followers.map((userId) => (
-              <div key={userId} className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                <p className="text-white">User ID: {userId}</p>
-              </div>
-            ))
           )}
         </div>
       )}
@@ -348,22 +298,14 @@ export function CompareView() {
   );
 }
 
-interface StatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  color: 'purple' | 'cyan' | 'amber' | 'orange' | 'green';
-}
-
-function StatCard({ icon, label, value, color }: StatCardProps) {
-  const colorClasses = {
+// ... StatCard component remains same ...
+function StatCard({ icon, label, value, color }: { icon: any, label: string, value: string | number, color: any }) {
+  const colorClasses: any = {
     purple: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
     cyan: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
     amber: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
     orange: 'text-orange-400 bg-orange-500/10 border-orange-500/20',
-    green: 'text-green-400 bg-green-500/10 border-green-500/20',
   };
-
   return (
     <div className={cn("rounded-lg p-3 border", colorClasses[color])}>
       <div className="flex items-center gap-2 mb-1">
@@ -380,35 +322,32 @@ interface UserProfileModalProps {
   isFollowing: boolean;
   onFollow: () => void;
   onClose: () => void;
-  myStats: {
-    totalWorkouts: number;
-    totalSets: number;
-    totalVolume: number;
-    currentStreak: number;
-  };
+  myStats: any;
 }
 
 function UserProfileModal({ user, isFollowing, onFollow, onClose, myStats }: UserProfileModalProps) {
-  const canShowStats = user.privacy?.showStats !== false;
+  // Sort logs by date (newest first)
+  const sortedLogs = Object.entries(user.logs || {})
+    .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
   
-  const userStats = user.stats || {
-    totalWorkouts: 0,
-    totalSets: 0,
-    currentStreak: 0,
-  };
+  const userStats = user.stats || { totalWorkouts: 0, totalSets: 0, currentStreak: 0, totalVolume: 0 };
+  const canShowWorkouts = user.privacy?.showWorkouts !== false;
+  const canShowNutrition = user.privacy?.showNutrition !== false;
+  const canShowPhotos = user.privacy?.showPhotos !== false;
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center">
-      <div className="bg-slate-900 w-full max-w-lg rounded-t-3xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+      <div className="bg-slate-900 w-full max-w-lg rounded-t-3xl h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
           <h3 className="text-white text-lg font-semibold">@{user.username}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white">
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto p-4 space-y-4">
-          {/* User Header */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {/* User Info */}
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
               <UserIcon className="w-8 h-8 text-white" />
@@ -419,7 +358,6 @@ function UserProfileModal({ user, isFollowing, onFollow, onClose, myStats }: Use
             </div>
           </div>
 
-          {/* Follow Button */}
           <button
             onClick={onFollow}
             className={cn(
@@ -429,83 +367,114 @@ function UserProfileModal({ user, isFollowing, onFollow, onClose, myStats }: Use
                 : "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
             )}
           >
-            {isFollowing ? (
-              <>
-                <Check className="w-5 h-5" />
-                Following
-              </>
-            ) : (
-              <>
-                <UserPlus className="w-5 h-5" />
-                Follow
-              </>
-            )}
+            {isFollowing ? <><Check className="w-5 h-5" /> Following</> : <><UserPlus className="w-5 h-5" /> Follow</>}
           </button>
 
-          {/* Stats Comparison */}
-          {canShowStats ? (
-            <div className="space-y-3">
-              <h4 className="text-white font-semibold flex items-center gap-2">
-                <Eye className="w-4 h-4" />
-                Stats Comparison
-              </h4>
-              
-              <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-slate-400 text-sm">
-                      <th className="text-left py-2">Stat</th>
-                      <th className="text-center py-2">You</th>
-                      <th className="text-center py-2">@{user.username}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-t border-slate-700">
-                      <td className="py-3 text-slate-300">Workouts</td>
-                      <td className="py-3 text-center">
-                        <span className="text-cyan-400 font-bold">{myStats.totalWorkouts}</span>
-                      </td>
-                      <td className="py-3 text-center">
-                        <span className="text-purple-400 font-bold">{userStats.totalWorkouts}</span>
-                      </td>
-                    </tr>
-                    <tr className="border-t border-slate-700">
-                      <td className="py-3 text-slate-300">Total Sets</td>
-                      <td className="py-3 text-center">
-                        <span className="text-cyan-400 font-bold">{myStats.totalSets}</span>
-                      </td>
-                      <td className="py-3 text-center">
-                        <span className="text-purple-400 font-bold">{userStats.totalSets}</span>
-                      </td>
-                    </tr>
-                    <tr className="border-t border-slate-700">
-                      <td className="py-3 text-slate-300">Current Streak</td>
-                      <td className="py-3 text-center">
-                        <span className="text-cyan-400 font-bold">{myStats.currentStreak}</span>
-                      </td>
-                      <td className="py-3 text-center">
-                        <span className="text-purple-400 font-bold">{userStats.currentStreak}</span>
-                      </td>
-                    </tr>
-                    <tr className="border-t border-slate-700">
-                      <td className="py-3 text-slate-300">Total Volume</td>
-                      <td className="py-3 text-center">
-                        <span className="text-cyan-400 font-bold">{(myStats.totalVolume / 1000).toFixed(1)}k</span>
-                      </td>
-                      <td className="py-3 text-center">
-                        <span className="text-slate-500">-</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+          {/* Stats Summary */}
+          {user.privacy?.showStats !== false ? (
+            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+               <h4 className="text-slate-300 text-sm font-semibold mb-3">Comparison</h4>
+               <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                  <div className="text-slate-500">Stat</div>
+                  <div className="text-cyan-400">You</div>
+                  <div className="text-purple-400">@{user.username}</div>
+                  
+                  <div className="col-span-3 h-px bg-slate-700 my-1" />
+                  
+                  <div className="text-slate-400 text-left">Workouts</div>
+                  <div className="font-bold">{myStats.totalWorkouts}</div>
+                  <div className="font-bold">{userStats.totalWorkouts}</div>
+
+                  <div className="text-slate-400 text-left">Streak</div>
+                  <div className="font-bold">{myStats.currentStreak}</div>
+                  <div className="font-bold">{userStats.currentStreak}</div>
+               </div>
             </div>
           ) : (
-            <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700 text-center">
-              <Eye className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              <p className="text-slate-400">This user's stats are private</p>
+            <div className="p-4 bg-slate-800/30 rounded-xl text-center text-slate-500 text-sm">
+              Stats are private
             </div>
           )}
+
+          {/* --- HISTORY LOGS SECTION --- */}
+          <div>
+            <h3 className="text-white font-bold mb-3 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-purple-400" />
+              Recent Activity
+            </h3>
+
+            {sortedLogs.length === 0 ? (
+              <p className="text-slate-500 text-center py-4">No logs available.</p>
+            ) : (
+              <div className="space-y-4">
+                {sortedLogs.map(([date, log]) => (
+                  <div key={date} className="bg-slate-800/40 rounded-xl p-4 border border-slate-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-white font-medium">
+                        {format(parseISO(date), 'EEEE, MMM d')}
+                      </h4>
+                      {/* Only show "Workout" badge if they actually worked out */}
+                      {log.workouts.length > 0 && canShowWorkouts && (
+                        <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full">
+                          Workout
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      {/* Workouts */}
+                      {canShowWorkouts && log.workouts.length > 0 && (
+                        <div className="space-y-2">
+                          {log.workouts.map((w, i) => (
+                            <div key={i} className="bg-slate-900/50 p-2 rounded-lg text-sm">
+                              <div className="text-purple-300 font-medium mb-1">{w.exerciseName}</div>
+                              <div className="text-slate-400 text-xs">
+                                {w.sets.length} sets • Max: {Math.max(...w.sets.map(s => s.weight))}kg
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Nutrition (Meals + Water) */}
+                      {canShowNutrition && (log.meals.length > 0 || log.waterIntake > 0) && (
+                        <div className="flex gap-2 text-xs">
+                           {log.meals.length > 0 && (
+                             <div className="bg-green-500/10 text-green-400 px-2 py-1 rounded-md flex items-center gap-1">
+                               <Utensils className="w-3 h-3" />
+                               {log.meals.reduce((acc, m) => acc + m.calories, 0)} kcal
+                             </div>
+                           )}
+                           {log.waterIntake > 0 && (
+                             <div className="bg-cyan-500/10 text-cyan-400 px-2 py-1 rounded-md flex items-center gap-1">
+                               <Droplets className="w-3 h-3" />
+                               {log.waterIntake}ml
+                             </div>
+                           )}
+                        </div>
+                      )}
+
+                      {/* Notes */}
+                      {log.notes && (
+                        <div className="bg-amber-500/5 p-2 rounded-lg text-xs text-amber-200/80 italic flex gap-2">
+                           <MessageSquare className="w-3 h-3 mt-0.5 shrink-0" />
+                           "{log.notes}"
+                        </div>
+                      )}
+
+                      {/* Privacy Notice */}
+                      {(!canShowWorkouts && log.workouts.length > 0) || 
+                       (!canShowNutrition && (log.meals.length > 0 || log.waterIntake > 0)) ? (
+                        <div className="text-xs text-slate-600 italic">
+                          Some details are hidden by user privacy settings.
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
