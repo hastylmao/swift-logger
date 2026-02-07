@@ -8,7 +8,7 @@ export function useSupabaseSync(userId: string | null) {
   const lastSyncRef = useRef<string>('');
   const isLoadingRef = useRef(false);
 
-// Load data from Supabase when user logs in
+  // Load data from Supabase when user logs in
   useEffect(() => {
     // 1. If user logs out, clear the store immediately
     if (!userId) {
@@ -19,10 +19,7 @@ export function useSupabaseSync(userId: string | null) {
     if (!isSupabaseConfigured()) return;
 
     const loadData = async () => {
-      // 2. Lock saving so we don't save empty state during load
       isLoadingRef.current = true;
-      
-      // 3. Clear previous user data before loading new data
       store.reset(); 
       
       try {
@@ -41,10 +38,14 @@ export function useSupabaseSync(userId: string | null) {
           const userData = data.data;
           
           // Load profile
-          if (userData.profile) {
-            store.setProfile(userData.profile);
-          }
+          if (userData.profile) store.setProfile(userData.profile);
           
+          // Load Splits (NEW: Now we load these!)
+          if (userData.activeSplit) store.setActiveSplit(userData.activeSplit);
+          if (userData.customSplits) {
+             userData.customSplits.forEach((s: any) => store.addCustomSplit(s));
+          }
+
           // Load daily logs
           if (userData.logs) {
             Object.entries(userData.logs).forEach(([date, log]) => {
@@ -70,7 +71,6 @@ export function useSupabaseSync(userId: string | null) {
       } catch (err) {
         console.error('Error loading data:', err);
       } finally {
-        // 4. Unlock saving only after everything is loaded
         isLoadingRef.current = false;
       }
     };
@@ -83,15 +83,17 @@ export function useSupabaseSync(userId: string | null) {
     if (!userId || isLoadingRef.current || !isSupabaseConfigured()) return;
 
     const saveData = async () => {
+      // NEW: We now include activeSplit and customSplits in the save!
       const userData = {
         profile: store.profile,
         logs: store.logs,
         unlockedAchievements: store.unlockedAchievements,
+        activeSplit: store.activeSplit,
+        customSplits: store.customSplits,
       };
 
       const currentData = JSON.stringify(userData);
       
-      // Don't save if nothing changed
       if (currentData === lastSyncRef.current) return;
       
       lastSyncRef.current = currentData;
@@ -115,10 +117,9 @@ export function useSupabaseSync(userId: string | null) {
       }
     };
 
-    // Debounce saves
     const timeout = setTimeout(saveData, 1000);
     return () => clearTimeout(timeout);
-  }, [userId, store.profile, store.logs, store.unlockedAchievements]);
+  }, [userId, store.profile, store.logs, store.unlockedAchievements, store.activeSplit, store.customSplits]);
 
   return null;
 }
