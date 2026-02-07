@@ -16,7 +16,7 @@ import {
 import { useStore } from '@/store/useStore';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { cn } from '@/utils/cn';
-import { UserProfile } from '@/types';
+import { UserProfile, DailyLog } from '@/types';
 
 interface PublicProfile {
   id: string;
@@ -77,21 +77,55 @@ export function CompareView() {
     
     setIsSearching(true);
     try {
+      // FIX: Query 'user_data' table and search inside the JSON column
       const { data, error } = await supabase
-        .from('profiles')
+        .from('user_data')
         .select('*')
-        .ilike('username', `%${searchTerm.toLowerCase()}%`)
+        .ilike('data->profile->>username', `%${searchTerm.toLowerCase()}%`)
         .limit(10);
 
       if (error) throw error;
       
-      setSearchResults((data || []).map((p: Record<string, unknown>) => ({
-        id: p.id as string,
-        username: p.username as string,
-        bio: (p.profile_data as UserProfile | undefined)?.bio,
-        profile_data: p.profile_data as UserProfile | undefined,
-        privacy: (p.profile_data as UserProfile | undefined)?.privacy,
-      })));
+      // FIX: Map the JSON data to the PublicProfile format
+      const results = (data || []).map((row: any) => {
+        const userData = row.data || {};
+        const userProfile = userData.profile || {};
+        const userLogs = (userData.logs || {}) as Record<string, DailyLog>;
+
+        // Calculate real stats for the user
+        const stats = {
+          totalWorkouts: Object.values(userLogs).reduce((sum: number, log: any) => sum + (log.workouts?.length || 0), 0),
+          totalSets: Object.values(userLogs).reduce((sum: number, log: any) => 
+            sum + (log.workouts?.reduce((s: number, w: any) => s + (w.sets?.length || 0), 0) || 0), 0),
+          currentStreak: (() => {
+            let streak = 0;
+            const today = new Date();
+            for (let i = 0; i < 365; i++) {
+              const date = new Date(today);
+              date.setDate(date.getDate() - i);
+              const dateStr = date.toISOString().split('T')[0];
+              const log = userLogs[dateStr];
+              if (log && log.workouts && log.workouts.length > 0) {
+                streak++;
+              } else if (i > 0) {
+                break;
+              }
+            }
+            return streak;
+          })()
+        };
+
+        return {
+          id: row.user_id, // Use user_id from the row
+          username: userProfile.username || 'Unknown',
+          bio: userProfile.bio,
+          profile_data: userProfile,
+          privacy: userProfile.privacy,
+          stats: stats
+        };
+      });
+
+      setSearchResults(results);
     } catch (error) {
       console.error('Search error:', error);
       setSearchResults([]);
@@ -357,11 +391,10 @@ interface UserProfileModalProps {
 function UserProfileModal({ user, isFollowing, onFollow, onClose, myStats }: UserProfileModalProps) {
   const canShowStats = user.privacy?.showStats !== false;
   
-  // Mock user stats (in production, these would come from Supabase)
   const userStats = user.stats || {
-    totalWorkouts: Math.floor(Math.random() * 200),
-    totalSets: Math.floor(Math.random() * 1000),
-    currentStreak: Math.floor(Math.random() * 30),
+    totalWorkouts: 0,
+    totalSets: 0,
+    currentStreak: 0,
   };
 
   return (
