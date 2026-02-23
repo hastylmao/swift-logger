@@ -7,7 +7,6 @@ import {
   Dumbbell,
   Flame,
   Target,
-  Eye,
   X,
   Check,
   ChevronRight,
@@ -15,16 +14,15 @@ import {
   Calendar,
   Utensils,
   Droplets,
-  MessageSquare,
-  Activity
+  MessageSquare
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { cn } from '@/utils/cn';
-import { UserProfile, DailyLog, Exercise } from '@/types';
+import { UserProfile, DailyLog } from '@/types';
 import { format, parseISO } from 'date-fns';
 // We import exercises to map IDs to muscle groups
-import { exercises } from '@/data/exercises';
+import { EXERCISES } from '@/data/exercises';
 
 interface PublicProfile {
   id: string;
@@ -338,7 +336,7 @@ function UserProfileModal({ user, isFollowing, onFollow, onClose, myStats }: Use
     const muscles = new Set<string>();
     workoutExercises.forEach(w => {
       // Find exercise in database to get muscle group
-      const exerciseDef = exercises.find(e => e.name === w.exerciseName || e.id === w.exerciseId);
+      const exerciseDef = EXERCISES.find(e => e.name === w.exerciseName || e.id === w.exerciseId);
       if (exerciseDef) {
         muscles.add(exerciseDef.muscleGroup);
       } else {

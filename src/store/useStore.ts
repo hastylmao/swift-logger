@@ -61,6 +61,10 @@ interface AppState {
   calculateTargetCalories: () => number;
   calculateWaterGoal: () => number;
 
+  // Gemini API key
+  geminiApiKey: string;
+  setGeminiApiKey: (key: string) => void;
+
   // Reset Action (Added)
   reset: () => void;
 }
@@ -82,6 +86,7 @@ export const useStore = create<AppState>()(
       customSplits: [],
       logs: {},
       unlockedAchievements: [],
+      geminiApiKey: '',
 
       // Reset Action Implementation (Added)
       reset: () => set({
@@ -93,6 +98,7 @@ export const useStore = create<AppState>()(
       }),
 
       setProfile: (profile) => set({ profile }),
+      setGeminiApiKey: (key) => set({ geminiApiKey: key }),
 
       setActiveSplit: (split) => set({ activeSplit: split }),
 

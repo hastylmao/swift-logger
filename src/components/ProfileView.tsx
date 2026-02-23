@@ -8,7 +8,11 @@ import {
   Plus,
   Trash2,
   Edit3,
-  X
+  X,
+  Key,
+  Eye,
+  EyeOff,
+  Sparkles
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { DEFAULT_SPLITS } from '@/data/splits';
@@ -36,12 +40,17 @@ export function ProfileView() {
     calculateBMR,
     calculateTDEE,
     calculateTargetCalories,
-    calculateWaterGoal
+    calculateWaterGoal,
+    geminiApiKey,
+    setGeminiApiKey,
   } = useStore();
 
   const [showProfileModal, setShowProfileModal] = useState(!profile);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [showCustomSplitModal, setShowCustomSplitModal] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState(geminiApiKey);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
 
   const allSplits = [...DEFAULT_SPLITS, ...customSplits];
 
@@ -227,6 +236,72 @@ export function ProfileView() {
         <Plus className="w-5 h-5" />
         Create Custom Split
       </button>
+
+      {/* Gemini AI Settings */}
+      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="p-4 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold">Gemini AI</h3>
+              <p className="text-slate-400 text-xs">Smarter nutrition & workout analysis</p>
+            </div>
+            {geminiApiKey && (
+              <span className="ml-auto px-2 py-0.5 bg-green-500/10 text-green-400 text-xs rounded-full border border-green-500/20">
+                Active
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-slate-400 text-xs leading-relaxed">
+            Connect your Gemini API key to unlock AI-powered nutrition analysis (including food photos) and natural language workout logging. Get a free key at{' '}
+            <a
+              href="https://aistudio.google.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-cyan-400 hover:text-cyan-300 underline"
+            >
+              aistudio.google.com
+            </a>
+            .
+          </p>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKeyInput}
+                onChange={(e) => { setApiKeyInput(e.target.value); setApiKeySaved(false); }}
+                placeholder="AIzaSy..."
+                className="w-full bg-slate-800 text-white pl-9 pr-10 py-2.5 rounded-xl border border-slate-700 focus:border-violet-500 focus:outline-none text-sm font-mono"
+              />
+              <button
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <button
+              onClick={() => { setGeminiApiKey(apiKeyInput.trim()); setApiKeySaved(true); }}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-medium shrink-0"
+            >
+              {apiKeySaved ? '✓ Saved' : 'Save'}
+            </button>
+          </div>
+          {geminiApiKey && (
+            <button
+              onClick={() => { setGeminiApiKey(''); setApiKeyInput(''); setApiKeySaved(false); }}
+              className="text-slate-500 text-xs hover:text-red-400 transition-colors"
+            >
+              Remove API key
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Profile Modal */}
       {showProfileModal && (

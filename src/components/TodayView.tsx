@@ -17,12 +17,15 @@ import {
   Search,
   MessageSquare,
   Image as ImageIcon,
-  Edit3
+  Edit3,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { EXERCISES, getExercisesByMuscleGroup } from '@/data/exercises';
-import { analyzeNutrition } from '@/utils/nutritionAI';
+import { analyzeNutrition, NutritionResult } from '@/utils/nutritionAI';
 import { parseWorkoutDescription } from '@/utils/workoutAI';
+import { analyzeNutritionWithGemini, parseWorkoutWithGemini } from '@/utils/gemini';
 import { WorkoutExercise, ExerciseSet, Meal, MUSCLE_GROUPS } from '@/types';
 import { cn } from '@/utils/cn';
 
@@ -43,7 +46,8 @@ export function TodayView() {
     addPostWorkoutImage,
     removePostWorkoutImage,
     calculateTargetCalories,
-    calculateWaterGoal
+    calculateWaterGoal,
+    geminiApiKey,
   } = useStore();
   
   const log = getLog(today);
@@ -515,6 +519,7 @@ export function TodayView() {
           }}
           onDone={() => setShowWorkoutModal(false)}
           suggestedMuscles={todaysSplit?.muscleGroups || []}
+          geminiApiKey={geminiApiKey}
         />
       )}
 
@@ -526,6 +531,7 @@ export function TodayView() {
             addMeal(today, meal);
             setShowMealModal(false);
           }}
+          geminiApiKey={geminiApiKey}
         />
       )}
     </div>
@@ -538,9 +544,10 @@ interface WorkoutModalProps {
   onAddMultiple: (exercises: WorkoutExercise[]) => void;
   onDone: () => void;
   suggestedMuscles: string[];
+  geminiApiKey: string;
 }
 
-function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles }: WorkoutModalProps) {
+function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles, geminiApiKey }: WorkoutModalProps) {
   const [mode, setMode] = useState<'browse' | 'prompt'>('browse');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(
@@ -553,6 +560,8 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
   // Prompt mode state
   const [promptText, setPromptText] = useState('');
   const [parsedWorkout, setParsedWorkout] = useState<ReturnType<typeof parseWorkoutDescription> | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const filteredExercises = selectedMuscle 
     ? getExercisesByMuscleGroup(selectedMuscle).filter(e => 
@@ -594,8 +603,35 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
     }
   };
 
-  const handleParseWorkout = () => {
-    if (promptText.trim()) {
+  const handleParseWorkout = async () => {
+    if (!promptText.trim()) return;
+    setErrorMsg(null);
+    
+    if (geminiApiKey) {
+      setIsLoading(true);
+      try {
+        const geminiResult = await parseWorkoutWithGemini(promptText, geminiApiKey);
+        // Convert Gemini result shape to the same shape as parseWorkoutDescription
+        setParsedWorkout({
+          exercises: geminiResult.exercises.map(ex => ({
+            exerciseId: `custom-${ex.exerciseName.toLowerCase().replace(/\s+/g, '-')}`,
+            exerciseName: ex.exerciseName,
+            sets: ex.sets,
+          })),
+          confidence: geminiResult.confidence,
+          rawParsed: geminiResult.exercises.map(ex => ({
+            exerciseName: ex.exerciseName,
+            sets: ex.sets,
+            matched: false,
+            originalText: promptText,
+          })),
+        });
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : 'Gemini request failed');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
       const result = parseWorkoutDescription(promptText);
       setParsedWorkout(result);
     }
@@ -651,27 +687,48 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
         {mode === 'prompt' ? (
           <div className="flex-1 overflow-auto p-4 space-y-4">
             <div>
-              <label className="text-slate-400 text-sm mb-2 block">
-                Describe your workout in natural language
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-slate-400 text-sm">
+                  Describe your workout in natural language
+                </label>
+                {geminiApiKey && (
+                  <span className="flex items-center gap-1 text-violet-400 text-xs font-medium">
+                    <Sparkles className="w-3 h-3" />
+                    Gemini AI
+                  </span>
+                )}
+              </div>
               <textarea
                 value={promptText}
                 onChange={(e) => {
                   setPromptText(e.target.value);
                   setParsedWorkout(null);
+                  setErrorMsg(null);
                 }}
                 placeholder="e.g., 3 sets of shoulder press, 50 lbs each, set 1 had 8 reps, set 2 had 7 reps, and set 3 had 6 reps. Then 4 sets of lateral raises at 10kg, 12 reps each"
                 className="w-full bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700 focus:border-purple-500 focus:outline-none resize-none h-32"
               />
             </div>
 
+            {errorMsg && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                <p className="text-red-400 text-sm">{errorMsg}</p>
+              </div>
+            )}
+
             {!parsedWorkout && (
               <button
                 onClick={handleParseWorkout}
-                disabled={!promptText.trim()}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium disabled:opacity-50"
+                disabled={!promptText.trim() || isLoading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Parse Workout
+                {isLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing...</>
+                ) : geminiApiKey ? (
+                  <><Sparkles className="w-4 h-4" /> Analyze with Gemini</>
+                ) : (
+                  'Parse Workout'
+                )}
               </button>
             )}
 
@@ -907,9 +964,10 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
 interface MealModalProps {
   onClose: () => void;
   onAdd: (meal: Meal) => void;
+  geminiApiKey: string;
 }
 
-function MealModal({ onClose, onAdd }: MealModalProps) {
+function MealModal({ onClose, onAdd, geminiApiKey }: MealModalProps) {
   const [mode, setMode] = useState<'ai' | 'manual' | 'image'>('ai');
   const [description, setDescription] = useState('');
   const [manualData, setManualData] = useState({
@@ -919,13 +977,28 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
     carbs: 0,
     fat: 0,
   });
-  const [aiResult, setAiResult] = useState<ReturnType<typeof analyzeNutrition> | null>(null);
+  const [aiResult, setAiResult] = useState<NutritionResult | null>(null);
   const [foodImage, setFoodImage] = useState<string | null>(null);
+  const [foodImageMime, setFoodImageMime] = useState<string>('image/jpeg');
   const [imageDescription, setImageDescription] = useState('');
   const foodImageRef = useRef<HTMLInputElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleAnalyze = () => {
-    if (description.trim()) {
+  const handleAnalyze = async () => {
+    if (!description.trim()) return;
+    setErrorMsg(null);
+    if (geminiApiKey) {
+      setIsLoading(true);
+      try {
+        const result = await analyzeNutritionWithGemini(description, geminiApiKey);
+        setAiResult(result);
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : 'Gemini request failed');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
       const result = analyzeNutrition(description);
       setAiResult(result);
     }
@@ -934,6 +1007,7 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setFoodImageMime(file.type || 'image/jpeg');
       const reader = new FileReader();
       reader.onloadend = () => {
         setFoodImage(reader.result as string);
@@ -942,9 +1016,27 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
     }
   };
 
-  const handleImageAnalyze = () => {
-    if (imageDescription.trim()) {
-      const result = analyzeNutrition(imageDescription);
+  const handleImageAnalyze = async () => {
+    if (!imageDescription.trim() && !foodImage) return;
+    setErrorMsg(null);
+    const desc = imageDescription.trim() || 'food in the image';
+    if (geminiApiKey) {
+      setIsLoading(true);
+      try {
+        const result = await analyzeNutritionWithGemini(
+          desc,
+          geminiApiKey,
+          foodImage ?? undefined,
+          foodImageMime
+        );
+        setAiResult(result);
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : 'Gemini request failed');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      const result = analyzeNutrition(desc);
       setAiResult(result);
     }
   };
@@ -1036,25 +1128,46 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
           {mode === 'ai' && (
             <div className="space-y-4">
               <div>
-                <label className="text-slate-400 text-sm mb-1 block">Describe what you ate</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 text-sm">Describe what you ate</label>
+                  {geminiApiKey && (
+                    <span className="flex items-center gap-1 text-violet-400 text-xs font-medium">
+                      <Sparkles className="w-3 h-3" />
+                      Gemini AI
+                    </span>
+                  )}
+                </div>
                 <textarea
                   value={description}
                   onChange={(e) => {
                     setDescription(e.target.value);
                     setAiResult(null);
+                    setErrorMsg(null);
                   }}
                   placeholder="e.g., 100g greek yogurt with 50g oats and a banana"
                   className="w-full bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700 focus:border-green-500 focus:outline-none resize-none h-24"
                 />
               </div>
+
+              {errorMsg && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                  <p className="text-red-400 text-sm">{errorMsg}</p>
+                </div>
+              )}
               
               {!aiResult && (
                 <button
                   onClick={handleAnalyze}
-                  disabled={!description.trim()}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50"
+                  disabled={!description.trim() || isLoading}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Analyze Nutrition
+                  {isLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing...</>
+                  ) : geminiApiKey ? (
+                    <><Sparkles className="w-4 h-4" /> Analyze with Gemini</>
+                  ) : (
+                    'Analyze Nutrition'
+                  )}
                 </button>
               )}
             </div>
@@ -1086,7 +1199,7 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
                     className="w-full h-32 object-cover rounded-xl"
                   />
                   <button
-                    onClick={() => { setFoodImage(null); setAiResult(null); }}
+                    onClick={() => { setFoodImage(null); setAiResult(null); setErrorMsg(null); }}
                     className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
                   >
                     <X className="w-4 h-4" />
@@ -1097,35 +1210,62 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
               {foodImage && (
                 <>
                   <div>
-                    <label className="text-slate-400 text-sm mb-1 block">
-                      Describe what's in the photo
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-slate-400 text-sm">
+                        {geminiApiKey ? 'Description (optional)' : "Describe what's in the photo"}
+                      </label>
+                      {geminiApiKey && (
+                        <span className="flex items-center gap-1 text-violet-400 text-xs font-medium">
+                          <Sparkles className="w-3 h-3" />
+                          Gemini Vision
+                        </span>
+                      )}
+                    </div>
                     <textarea
                       value={imageDescription}
                       onChange={(e) => {
                         setImageDescription(e.target.value);
                         setAiResult(null);
+                        setErrorMsg(null);
                       }}
                       placeholder="e.g., 300g rice, 150g chicken, broccoli"
                       className="w-full bg-slate-800 text-white px-3 py-2 rounded-xl border border-slate-700 focus:border-green-500 focus:outline-none resize-none h-16"
                     />
                   </div>
 
+                  {errorMsg && (
+                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                      <p className="text-red-400 text-sm">{errorMsg}</p>
+                    </div>
+                  )}
+
                   {!aiResult && (
                     <button
                       onClick={handleImageAnalyze}
-                      disabled={!imageDescription.trim()}
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50"
+                      disabled={(!imageDescription.trim() && !geminiApiKey) || isLoading}
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                     >
-                      Analyze with Description
+                      {isLoading ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing...</>
+                      ) : geminiApiKey ? (
+                        <><Sparkles className="w-4 h-4" /> Analyze Photo with Gemini</>
+                      ) : (
+                        'Analyze with Description'
+                      )}
                     </button>
                   )}
                 </>
               )}
 
-              <p className="text-slate-500 text-xs text-center">
-                💡 Adding a description with approximate quantities (like "150g chicken") gives more accurate results
-              </p>
+              {geminiApiKey ? (
+                <p className="text-slate-500 text-xs text-center">
+                  🤖 Gemini will identify foods from the photo automatically
+                </p>
+              ) : (
+                <p className="text-slate-500 text-xs text-center">
+                  💡 Adding a description with approximate quantities (like "150g chicken") gives more accurate results
+                </p>
+              )}
             </div>
           )}
 
