@@ -17,12 +17,14 @@ import {
   Search,
   MessageSquare,
   Image as ImageIcon,
-  Edit3
+  Edit3,
+  Loader2
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { EXERCISES, getExercisesByMuscleGroup } from '@/data/exercises';
 import { analyzeNutrition } from '@/utils/nutritionAI';
 import { parseWorkoutDescription } from '@/utils/workoutAI';
+import { parseWorkoutWithGemini, analyzeNutritionWithGemini } from '@/utils/geminiAI';
 import { WorkoutExercise, ExerciseSet, Meal, MUSCLE_GROUPS } from '@/types';
 import { cn } from '@/utils/cn';
 
@@ -541,6 +543,7 @@ interface WorkoutModalProps {
 }
 
 function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles }: WorkoutModalProps) {
+  const { geminiApiKey } = useStore();
   const [mode, setMode] = useState<'browse' | 'prompt'>('browse');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(
@@ -553,6 +556,8 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
   // Prompt mode state
   const [promptText, setPromptText] = useState('');
   const [parsedWorkout, setParsedWorkout] = useState<ReturnType<typeof parseWorkoutDescription> | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const filteredExercises = selectedMuscle 
     ? getExercisesByMuscleGroup(selectedMuscle).filter(e => 
@@ -594,10 +599,30 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
     }
   };
 
-  const handleParseWorkout = () => {
-    if (promptText.trim()) {
-      const result = parseWorkoutDescription(promptText);
-      setParsedWorkout(result);
+  const handleParseWorkout = async () => {
+    if (!promptText.trim()) return;
+    setIsParsing(true);
+    setParseError(null);
+    try {
+      if (geminiApiKey) {
+        const result = await parseWorkoutWithGemini(promptText, geminiApiKey);
+        setParsedWorkout(result);
+      } else {
+        const result = parseWorkoutDescription(promptText);
+        setParsedWorkout(result);
+      }
+    } catch (geminiErr) {
+      // Fall back to local parsing if Gemini fails
+      console.warn('Gemini workout parsing failed, falling back to local parser:', geminiErr);
+      try {
+        const result = parseWorkoutDescription(promptText);
+        setParsedWorkout(result);
+      } catch (localErr) {
+        console.error('Local workout parsing also failed:', localErr);
+        setParseError('Failed to parse workout. Please try again.');
+      }
+    } finally {
+      setIsParsing(false);
     }
   };
 
@@ -666,13 +691,22 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
             </div>
 
             {!parsedWorkout && (
-              <button
-                onClick={handleParseWorkout}
-                disabled={!promptText.trim()}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium disabled:opacity-50"
-              >
-                Parse Workout
-              </button>
+              <>
+                <button
+                  onClick={handleParseWorkout}
+                  disabled={!promptText.trim() || isParsing}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isParsing ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Parsing with {geminiApiKey ? 'Gemini AI' : 'AI'}…</>
+                  ) : (
+                    `Parse Workout${geminiApiKey ? ' with Gemini AI' : ''}`
+                  )}
+                </button>
+                {parseError && (
+                  <p className="text-red-400 text-sm text-center">{parseError}</p>
+                )}
+              </>
             )}
 
             {parsedWorkout && (
@@ -910,6 +944,7 @@ interface MealModalProps {
 }
 
 function MealModal({ onClose, onAdd }: MealModalProps) {
+  const { geminiApiKey } = useStore();
   const [mode, setMode] = useState<'ai' | 'manual' | 'image'>('ai');
   const [description, setDescription] = useState('');
   const [manualData, setManualData] = useState({
@@ -922,12 +957,33 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
   const [aiResult, setAiResult] = useState<ReturnType<typeof analyzeNutrition> | null>(null);
   const [foodImage, setFoodImage] = useState<string | null>(null);
   const [imageDescription, setImageDescription] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const foodImageRef = useRef<HTMLInputElement>(null);
 
-  const handleAnalyze = () => {
-    if (description.trim()) {
-      const result = analyzeNutrition(description);
-      setAiResult(result);
+  const handleAnalyze = async () => {
+    if (!description.trim()) return;
+    setIsAnalyzing(true);
+    setAnalyzeError(null);
+    try {
+      if (geminiApiKey) {
+        const result = await analyzeNutritionWithGemini(description, geminiApiKey);
+        setAiResult(result);
+      } else {
+        const result = analyzeNutrition(description);
+        setAiResult(result);
+      }
+    } catch (geminiErr) {
+      console.warn('Gemini nutrition analysis failed, falling back to local parser:', geminiErr);
+      try {
+        const result = analyzeNutrition(description);
+        setAiResult(result);
+      } catch (localErr) {
+        console.error('Local nutrition analysis also failed:', localErr);
+        setAnalyzeError('Failed to analyze nutrition. Please try again.');
+      }
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -942,10 +998,30 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
     }
   };
 
-  const handleImageAnalyze = () => {
-    if (imageDescription.trim()) {
-      const result = analyzeNutrition(imageDescription);
-      setAiResult(result);
+  const handleImageAnalyze = async () => {
+    // When Gemini is available and an image is uploaded, description is optional
+    if (!geminiApiKey && !imageDescription.trim()) return;
+    setIsAnalyzing(true);
+    setAnalyzeError(null);
+    try {
+      if (geminiApiKey) {
+        const result = await analyzeNutritionWithGemini(imageDescription, geminiApiKey, foodImage ?? undefined);
+        setAiResult(result);
+      } else {
+        const result = analyzeNutrition(imageDescription);
+        setAiResult(result);
+      }
+    } catch (geminiErr) {
+      console.warn('Gemini image analysis failed, falling back to local parser:', geminiErr);
+      try {
+        const result = analyzeNutrition(imageDescription);
+        setAiResult(result);
+      } catch (localErr) {
+        console.error('Local nutrition analysis also failed:', localErr);
+        setAnalyzeError('Failed to analyze nutrition. Please try again.');
+      }
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -1049,13 +1125,22 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
               </div>
               
               {!aiResult && (
-                <button
-                  onClick={handleAnalyze}
-                  disabled={!description.trim()}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50"
-                >
-                  Analyze Nutrition
-                </button>
+                <>
+                  <button
+                    onClick={handleAnalyze}
+                    disabled={!description.trim() || isAnalyzing}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isAnalyzing ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing with {geminiApiKey ? 'Gemini AI' : 'AI'}…</>
+                    ) : (
+                      `Analyze Nutrition${geminiApiKey ? ' with Gemini AI' : ''}`
+                    )}
+                  </button>
+                  {analyzeError && (
+                    <p className="text-red-400 text-sm text-center">{analyzeError}</p>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1098,7 +1183,9 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
                 <>
                   <div>
                     <label className="text-slate-400 text-sm mb-1 block">
-                      Describe what's in the photo
+                      {geminiApiKey
+                        ? 'Describe what\'s in the photo (optional – Gemini can analyze the image directly)'
+                        : 'Describe what\'s in the photo'}
                     </label>
                     <textarea
                       value={imageDescription}
@@ -1112,19 +1199,30 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
                   </div>
 
                   {!aiResult && (
-                    <button
-                      onClick={handleImageAnalyze}
-                      disabled={!imageDescription.trim()}
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50"
-                    >
-                      Analyze with Description
-                    </button>
+                    <>
+                      <button
+                        onClick={handleImageAnalyze}
+                        disabled={(!imageDescription.trim() && !geminiApiKey) || isAnalyzing}
+                        className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isAnalyzing ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing with {geminiApiKey ? 'Gemini AI' : 'AI'}…</>
+                        ) : (
+                          `Analyze with ${geminiApiKey ? 'Gemini AI' : 'Description'}`
+                        )}
+                      </button>
+                      {analyzeError && (
+                        <p className="text-red-400 text-sm text-center">{analyzeError}</p>
+                      )}
+                    </>
                   )}
                 </>
               )}
 
               <p className="text-slate-500 text-xs text-center">
-                💡 Adding a description with approximate quantities (like "150g chicken") gives more accurate results
+                {geminiApiKey
+                  ? '✨ Gemini AI will analyze the photo and estimate calories automatically'
+                  : '💡 Adding a description with approximate quantities (like "150g chicken") gives more accurate results'}
               </p>
             </div>
           )}

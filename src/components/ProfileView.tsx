@@ -36,14 +36,24 @@ export function ProfileView() {
     calculateBMR,
     calculateTDEE,
     calculateTargetCalories,
-    calculateWaterGoal
+    calculateWaterGoal,
+    geminiApiKey,
+    setGeminiApiKey,
   } = useStore();
 
   const [showProfileModal, setShowProfileModal] = useState(!profile);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [showCustomSplitModal, setShowCustomSplitModal] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState(geminiApiKey);
+  const [geminiKeySaved, setGeminiKeySaved] = useState(false);
 
   const allSplits = [...DEFAULT_SPLITS, ...customSplits];
+
+  const handleSaveGeminiKey = () => {
+    setGeminiApiKey(geminiKeyInput.trim());
+    setGeminiKeySaved(true);
+    setTimeout(() => setGeminiKeySaved(false), 2000);
+  };
 
   return (
     <div className="space-y-4 pb-24">
@@ -218,6 +228,44 @@ export function ProfileView() {
           </div>
         </div>
       )}
+
+      {/* Gemini AI Settings */}
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+        <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
+          ✨ Gemini AI
+        </h3>
+        <p className="text-slate-400 text-sm mb-3">
+          Add your Google Gemini API key to enable smart AI-powered food and workout logging.
+          {geminiApiKey && <span className="text-green-400 ml-1">● Active</span>}
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={geminiKeyInput}
+            onChange={(e) => { setGeminiKeyInput(e.target.value); setGeminiKeySaved(false); }}
+            placeholder="Paste your Gemini API key here"
+            className="flex-1 bg-slate-800 text-white px-3 py-2 rounded-lg border border-slate-700 focus:border-cyan-500 focus:outline-none text-sm"
+          />
+          <button
+            onClick={handleSaveGeminiKey}
+            className="px-4 py-2 rounded-lg bg-cyan-500 text-white text-sm font-medium hover:bg-cyan-400 transition-colors whitespace-nowrap"
+          >
+            {geminiKeySaved ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+        {geminiApiKey && (
+          <button
+            onClick={() => { setGeminiKeyInput(''); setGeminiApiKey(''); }}
+            className="mt-2 text-red-400 text-xs hover:text-red-300 transition-colors"
+          >
+            Remove API key
+          </button>
+        )}
+        <p className="text-slate-500 text-xs mt-2">
+          Get a free API key at{' '}
+          <span className="text-cyan-400">aistudio.google.com</span>
+        </p>
+      </div>
 
       {/* Create Custom Split Button */}
       <button
