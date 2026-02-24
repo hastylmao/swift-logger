@@ -8,7 +8,11 @@ import {
   Plus,
   Trash2,
   Edit3,
-  X
+  X,
+  Sparkles,
+  Key,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { DEFAULT_SPLITS } from '@/data/splits';
@@ -36,12 +40,17 @@ export function ProfileView() {
     calculateBMR,
     calculateTDEE,
     calculateTargetCalories,
-    calculateWaterGoal
+    calculateWaterGoal,
+    geminiApiKey,
+    setGeminiApiKey,
   } = useStore();
 
   const [showProfileModal, setShowProfileModal] = useState(!profile);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [showCustomSplitModal, setShowCustomSplitModal] = useState(false);
+  const [editingGeminiKey, setEditingGeminiKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   const allSplits = [...DEFAULT_SPLITS, ...customSplits];
 
@@ -227,6 +236,104 @@ export function ProfileView() {
         <Plus className="w-5 h-5" />
         Create Custom Split
       </button>
+
+      {/* AI / Gemini Settings */}
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold">AI Settings</h3>
+              <p className="text-slate-500 text-xs">
+                {geminiApiKey ? 'Gemini AI is active' : 'Connect Gemini to enable AI features'}
+              </p>
+            </div>
+          </div>
+          {geminiApiKey && !editingGeminiKey && (
+            <span className="px-2 py-0.5 bg-violet-500/10 text-violet-400 text-xs rounded-full border border-violet-500/20">
+              Active
+            </span>
+          )}
+        </div>
+
+        {!editingGeminiKey ? (
+          <div className="space-y-3">
+            {geminiApiKey ? (
+              <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Key className="w-4 h-4 text-violet-400" />
+                  <span className="text-slate-300 text-sm font-mono">
+                    {showGeminiKey ? geminiApiKey : '•'.repeat(20) + geminiApiKey.slice(-4)}
+                  </span>
+                </div>
+                <button onClick={() => setShowGeminiKey(!showGeminiKey)} className="text-slate-500 hover:text-slate-300">
+                  {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            ) : (
+              <p className="text-slate-500 text-sm">
+                Add a Gemini API key to enable AI-powered food and workout analysis.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setEditingGeminiKey(true); setGeminiKeyInput(geminiApiKey || ''); }}
+                className="flex-1 py-2.5 rounded-xl bg-violet-500/10 text-violet-400 border border-violet-500/20 font-medium text-sm flex items-center justify-center gap-2 hover:bg-violet-500/20 transition-colors"
+              >
+                <Key className="w-4 h-4" />
+                {geminiApiKey ? 'Update Key' : 'Add API Key'}
+              </button>
+              {geminiApiKey && (
+                <button
+                  onClick={() => setGeminiApiKey(null)}
+                  className="px-4 py-2.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 font-medium text-sm hover:bg-red-500/20 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="relative">
+              <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKeyInput}
+                onChange={(e) => setGeminiKeyInput(e.target.value)}
+                placeholder="AIza..."
+                autoFocus
+                className="w-full bg-slate-800 text-white pl-9 pr-9 py-3 rounded-xl border border-slate-700 focus:border-violet-500 focus:outline-none text-sm"
+              />
+              <button
+                onClick={() => setShowGeminiKey(!showGeminiKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              >
+                {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setGeminiApiKey(geminiKeyInput.trim() || null);
+                  setEditingGeminiKey(false);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-semibold text-sm"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setEditingGeminiKey(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-400 font-medium text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Profile Modal */}
       {showProfileModal && (
