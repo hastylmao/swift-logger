@@ -24,7 +24,7 @@ import { cn } from '@/utils/cn';
 import { UserProfile, DailyLog, Exercise } from '@/types';
 import { format, parseISO } from 'date-fns';
 // We import exercises to map IDs to muscle groups
-import { exercises } from '@/data/exercises';
+import { EXERCISES as exercises } from "@/data/exercises";
 
 interface PublicProfile {
   id: string;

@@ -17,10 +17,14 @@ import {
   Search,
   MessageSquare,
   Image as ImageIcon,
-  Edit3
+  Edit3,
+  Sparkles,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { EXERCISES, getExercisesByMuscleGroup } from '@/data/exercises';
+import { analyzeNutritionWithGemini, analyzeNutritionImageWithGemini, parseWorkoutWithGemini, NutritionResult, WorkoutResult } from '@/utils/gemini';
 import { analyzeNutrition } from '@/utils/nutritionAI';
 import { parseWorkoutDescription } from '@/utils/workoutAI';
 import { WorkoutExercise, ExerciseSet, Meal, MUSCLE_GROUPS } from '@/types';
@@ -88,30 +92,34 @@ export function TodayView() {
   return (
     <div className="space-y-4 pb-24">
       {/* Status Header */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-5 border border-cyan-500/20 shadow-lg shadow-cyan-500/5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 rounded-2xl p-5 border border-white/8 shadow-xl">
+        {/* Decorative glow */}
+        <div className="absolute -top-8 -right-8 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+        
+        <div className="relative flex items-center justify-between mb-4">
           <div>
-            <p className="text-cyan-400 text-sm font-medium">
+            <p className="text-cyan-400 text-sm font-semibold tracking-wide">
               {format(new Date(), 'EEEE, MMMM d')}
             </p>
-            <h2 className="text-white text-2xl font-bold mt-1">
-              {profile?.name ? `Hey, ${profile.name.split(' ')[0]}` : 'Daily Status'}
+            <h2 className="text-white text-2xl font-bold mt-0.5">
+              {profile?.name ? `Hey, ${profile.name.split(' ')[0]} 👋` : 'Daily Status'}
             </h2>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-400 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
             <Zap className="w-6 h-6 text-white" />
           </div>
         </div>
         
         {todaysSplit && (
-          <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
-            <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">Today's Focus</p>
+          <div className="relative bg-white/5 rounded-xl p-3 border border-white/8 backdrop-blur-sm">
+            <p className="text-slate-400 text-xs uppercase tracking-wider mb-1 font-semibold">Today's Focus</p>
             <p className="text-white font-semibold">{todaysSplit.label}</p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {todaysSplit.muscleGroups.map((group) => (
                 <span 
                   key={group}
-                  className="px-2 py-0.5 bg-cyan-500/10 text-cyan-400 text-xs rounded-full border border-cyan-500/20"
+                  className="px-2 py-0.5 bg-cyan-500/15 text-cyan-300 text-xs rounded-full border border-cyan-500/25 font-medium"
                 >
                   {group}
                 </span>
@@ -121,35 +129,42 @@ export function TodayView() {
         )}
         
         {!activeSplit && (
-          <p className="text-slate-400 text-sm">Set up your workout split in Profile</p>
+          <p className="relative text-slate-400 text-sm">Set up your workout split in Profile</p>
         )}
       </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-slate-900 rounded-xl p-3 border border-slate-800">
-          <Flame className="w-5 h-5 text-orange-400 mb-1" />
-          <p className="text-2xl font-bold text-white">{totalMacros.calories}</p>
-          <p className="text-xs text-slate-400">/ {targetCalories} kcal</p>
+        <div className="bg-slate-900/80 rounded-2xl p-3.5 border border-white/6 shadow-lg">
+          <div className="w-8 h-8 rounded-xl bg-orange-500/15 flex items-center justify-center mb-2">
+            <Flame className="w-4 h-4 text-orange-400" />
+          </div>
+          <p className="text-2xl font-bold text-white leading-none">{totalMacros.calories}</p>
+          <p className="text-xs text-slate-500 mt-0.5">/ {targetCalories} kcal</p>
         </div>
-        <div className="bg-slate-900 rounded-xl p-3 border border-slate-800">
-          <Target className="w-5 h-5 text-purple-400 mb-1" />
-          <p className="text-2xl font-bold text-white">{Math.round(totalMacros.protein)}g</p>
-          <p className="text-xs text-slate-400">Protein</p>
+        <div className="bg-slate-900/80 rounded-2xl p-3.5 border border-white/6 shadow-lg">
+          <div className="w-8 h-8 rounded-xl bg-purple-500/15 flex items-center justify-center mb-2">
+            <Target className="w-4 h-4 text-purple-400" />
+          </div>
+          <p className="text-2xl font-bold text-white leading-none">{Math.round(totalMacros.protein)}g</p>
+          <p className="text-xs text-slate-500 mt-0.5">Protein</p>
         </div>
-        <div className="bg-slate-900 rounded-xl p-3 border border-slate-800">
-          <Droplets className="w-5 h-5 text-blue-400 mb-1" />
-          <p className="text-2xl font-bold text-white">{(log.waterIntake / 1000).toFixed(1)}L</p>
-          <p className="text-xs text-slate-400">/ {(waterGoal / 1000).toFixed(1)}L</p>
+        <div className="bg-slate-900/80 rounded-2xl p-3.5 border border-white/6 shadow-lg">
+          <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center mb-2">
+            <Droplets className="w-4 h-4 text-blue-400" />
+          </div>
+          <p className="text-2xl font-bold text-white leading-none">{(log.waterIntake / 1000).toFixed(1)}L</p>
+          <p className="text-xs text-slate-500 mt-0.5">/ {(waterGoal / 1000).toFixed(1)}L</p>
         </div>
       </div>
 
       {/* Goal Weight Progress */}
       {profile?.goalWeight && profile?.startingWeight && profile.goalWeight !== profile.weight && (
-        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-xl p-4 border border-cyan-500/20">
+        <div className="relative overflow-hidden bg-slate-900/80 rounded-2xl p-4 border border-white/6 shadow-lg">
+          <div className="absolute -top-6 -right-6 w-20 h-20 bg-cyan-500/8 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-white font-semibold">Weight Goal Progress</h3>
-            <span className="text-cyan-400 text-sm font-medium">
+            <h3 className="text-white font-semibold text-sm">Weight Goal Progress</h3>
+            <span className="text-cyan-400 text-sm font-bold">
               {(() => {
                 const start = profile.startingWeight;
                 const current = profile.weight;
@@ -164,9 +179,9 @@ export function TodayView() {
             </span>
           </div>
           
-          <div className="relative h-3 bg-slate-800 rounded-full overflow-hidden mb-3">
+          <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden mb-3">
             <div 
-              className="absolute inset-y-0 left-0 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500"
+              className="absolute inset-y-0 left-0 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-700"
               style={{ 
                 width: `${(() => {
                   const start = profile.startingWeight;
@@ -184,71 +199,71 @@ export function TodayView() {
           
           <div className="flex justify-between text-sm">
             <div className="text-center">
-              <p className="text-slate-400 text-xs">Started</p>
-              <p className="text-white font-medium">{profile.startingWeight} kg</p>
+              <p className="text-slate-500 text-xs">Started</p>
+              <p className="text-white font-semibold">{profile.startingWeight} kg</p>
             </div>
             <div className="text-center">
-              <p className="text-slate-400 text-xs">Current</p>
+              <p className="text-slate-500 text-xs">Current</p>
               <p className="text-cyan-400 font-bold">{profile.weight} kg</p>
             </div>
             <div className="text-center">
-              <p className="text-slate-400 text-xs">Goal</p>
-              <p className="text-white font-medium">{profile.goalWeight} kg</p>
+              <p className="text-slate-500 text-xs">Goal</p>
+              <p className="text-white font-semibold">{profile.goalWeight} kg</p>
             </div>
           </div>
           
-          <div className="mt-3 text-center">
-            <p className="text-slate-400 text-sm">
+          <div className="mt-2.5 text-center">
+            <p className="text-slate-500 text-xs">
               {Math.abs(profile.goalWeight - profile.weight).toFixed(1)} kg to go
-              {profile.goalWeight > profile.weight ? ' (gaining)' : ' (losing)'}
+              {profile.goalWeight > profile.weight ? ' 📈' : ' 📉'}
             </p>
           </div>
         </div>
       )}
 
       {/* Workout Section */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+      <div className="bg-slate-900/80 rounded-2xl border border-white/6 overflow-hidden shadow-lg">
         <button
           onClick={() => toggleSection('workout')}
           className="w-full flex items-center justify-between p-4"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-md shadow-purple-500/20">
               <Dumbbell className="w-5 h-5 text-white" />
             </div>
             <div className="text-left">
-              <h3 className="text-white font-semibold">Workout</h3>
-              <p className="text-slate-400 text-sm">{log.workouts.length} exercises logged</p>
+              <h3 className="text-white font-semibold text-sm">Workout</h3>
+              <p className="text-slate-500 text-xs">{log.workouts.length} exercises logged</p>
             </div>
           </div>
           {expandedSections.workout ? (
-            <ChevronUp className="w-5 h-5 text-slate-400" />
+            <ChevronUp className="w-4 h-4 text-slate-500" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-slate-400" />
+            <ChevronDown className="w-4 h-4 text-slate-500" />
           )}
         </button>
         
         {expandedSections.workout && (
-          <div className="px-4 pb-4 space-y-3">
+          <div className="px-4 pb-4 space-y-2.5">
             {log.workouts.map((exercise, idx) => (
               <div 
                 key={idx} 
-                className="bg-slate-800/50 rounded-lg p-3 border border-slate-700"
+                className="bg-white/4 rounded-xl p-3 border border-white/6"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-white font-medium">{exercise.exerciseName}</h4>
+                  <h4 className="text-white font-semibold text-sm">{exercise.exerciseName}</h4>
                   <button 
                     onClick={() => removeWorkoutExercise(today, idx)}
-                    className="text-slate-400 hover:text-red-400 transition-colors"
+                    className="text-slate-500 hover:text-red-400 transition-colors p-1"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {exercise.sets.map((set, setIdx) => (
                     <div 
                       key={setIdx}
-                      className="px-2 py-1 bg-slate-700 rounded text-xs text-slate-300"
+                      className="px-2 py-1 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs text-purple-300 font-medium"
                     >
                       {set.weight}kg × {set.reps}
                     </div>
@@ -259,9 +274,9 @@ export function TodayView() {
             
             <button
               onClick={() => setShowWorkoutModal(true)}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-600 text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-purple-500/20"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4" />
               Add Exercise
             </button>
           </div>
@@ -269,24 +284,24 @@ export function TodayView() {
       </div>
 
       {/* Nutrition Section */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+      <div className="bg-slate-900/80 rounded-2xl border border-white/6 overflow-hidden shadow-lg">
         <button
           onClick={() => toggleSection('nutrition')}
           className="w-full flex items-center justify-between p-4"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md shadow-green-500/20">
               <Utensils className="w-5 h-5 text-white" />
             </div>
             <div className="text-left">
-              <h3 className="text-white font-semibold">Nutrition</h3>
-              <p className="text-slate-400 text-sm">{log.meals.length} meals logged</p>
+              <h3 className="text-white font-semibold text-sm">Nutrition</h3>
+              <p className="text-slate-500 text-xs">{log.meals.length} meals logged</p>
             </div>
           </div>
           {expandedSections.nutrition ? (
-            <ChevronUp className="w-5 h-5 text-slate-400" />
+            <ChevronUp className="w-4 h-4 text-slate-500" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-slate-400" />
+            <ChevronDown className="w-4 h-4 text-slate-500" />
           )}
         </button>
         
@@ -349,34 +364,34 @@ export function TodayView() {
             {log.meals.map((meal) => (
               <div 
                 key={meal.id} 
-                className="bg-slate-800/50 rounded-lg p-3 border border-slate-700"
+                className="bg-white/4 rounded-xl p-3 border border-white/6"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <p className="text-white text-sm">{meal.description}</p>
-                    <p className="text-slate-500 text-xs">{meal.time}</p>
+                    <p className="text-white text-sm font-medium">{meal.description}</p>
+                    <p className="text-slate-500 text-xs mt-0.5">{meal.time}</p>
                   </div>
                   <button 
                     onClick={() => removeMeal(today, meal.id)}
-                    className="text-slate-400 hover:text-red-400 transition-colors"
+                    className="text-slate-500 hover:text-red-400 transition-colors p-1"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                <div className="flex gap-3 text-xs">
-                  <span className="text-orange-400">{meal.calories} kcal</span>
-                  <span className="text-purple-400">{meal.protein}g P</span>
-                  <span className="text-blue-400">{meal.carbs}g C</span>
-                  <span className="text-yellow-400">{meal.fat}g F</span>
+                <div className="flex gap-2 text-xs flex-wrap">
+                  <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-lg border border-orange-500/20">{meal.calories} kcal</span>
+                  <span className="px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-lg border border-purple-500/20">{meal.protein}g P</span>
+                  <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20">{meal.carbs}g C</span>
+                  <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-400 rounded-lg border border-yellow-500/20">{meal.fat}g F</span>
                 </div>
               </div>
             ))}
             
             <button
               onClick={() => setShowMealModal(true)}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-green-500/20"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4" />
               Add Meal
             </button>
           </div>
@@ -384,42 +399,42 @@ export function TodayView() {
       </div>
 
       {/* Water Section */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+      <div className="bg-slate-900/80 rounded-2xl border border-white/6 overflow-hidden shadow-lg">
         <button
           onClick={() => toggleSection('water')}
           className="w-full flex items-center justify-between p-4"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-md shadow-blue-500/20">
               <Droplets className="w-5 h-5 text-white" />
             </div>
             <div className="text-left">
-              <h3 className="text-white font-semibold">Water</h3>
-              <p className="text-slate-400 text-sm">{(log.waterIntake / 1000).toFixed(1)}L / {(waterGoal / 1000).toFixed(1)}L</p>
+              <h3 className="text-white font-semibold text-sm">Water</h3>
+              <p className="text-slate-500 text-xs">{(log.waterIntake / 1000).toFixed(1)}L / {(waterGoal / 1000).toFixed(1)}L</p>
             </div>
           </div>
           {expandedSections.water ? (
-            <ChevronUp className="w-5 h-5 text-slate-400" />
+            <ChevronUp className="w-4 h-4 text-slate-500" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-slate-400" />
+            <ChevronDown className="w-4 h-4 text-slate-500" />
           )}
         </button>
         
         {expandedSections.water && (
           <div className="px-4 pb-4">
-            <div className="h-3 bg-slate-800 rounded-full overflow-hidden mb-4">
+            <div className="h-2 bg-slate-800 rounded-full overflow-hidden mb-4">
               <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all"
+                className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-500"
                 style={{ width: `${Math.min((log.waterIntake / waterGoal) * 100, 100)}%` }}
               />
             </div>
             
-            <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center justify-center gap-3">
               <button
                 onClick={() => setWater(today, Math.max(0, log.waterIntake - 250))}
-                className="w-12 h-12 rounded-full bg-slate-800 text-white flex items-center justify-center hover:bg-slate-700 transition-colors"
+                className="w-11 h-11 rounded-xl bg-slate-800 text-white flex items-center justify-center hover:bg-slate-700 transition-colors border border-white/6"
               >
-                <Minus className="w-5 h-5" />
+                <Minus className="w-4 h-4" />
               </button>
               
               <div className="flex gap-2">
@@ -427,7 +442,7 @@ export function TodayView() {
                   <button
                     key={amount}
                     onClick={() => addWater(today, amount)}
-                    className="px-4 py-2 rounded-lg bg-blue-500/10 text-blue-400 text-sm font-medium border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                    className="px-4 py-2.5 rounded-xl bg-blue-500/10 text-blue-400 text-sm font-semibold border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
                   >
                     +{amount}ml
                   </button>
@@ -436,9 +451,9 @@ export function TodayView() {
               
               <button
                 onClick={() => addWater(today, 250)}
-                className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 text-white flex items-center justify-center hover:opacity-90 transition-opacity"
+                className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 text-white flex items-center justify-center hover:opacity-90 transition-opacity shadow-md shadow-blue-500/20"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -446,24 +461,24 @@ export function TodayView() {
       </div>
 
       {/* Photos Section */}
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+      <div className="bg-slate-900/80 rounded-2xl border border-white/6 overflow-hidden shadow-lg">
         <button
           onClick={() => toggleSection('photos')}
           className="w-full flex items-center justify-between p-4"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shadow-amber-500/20">
               <Camera className="w-5 h-5 text-white" />
             </div>
             <div className="text-left">
-              <h3 className="text-white font-semibold">Progress Photos</h3>
-              <p className="text-slate-400 text-sm">{log.postWorkoutImages.length} photos</p>
+              <h3 className="text-white font-semibold text-sm">Progress Photos</h3>
+              <p className="text-slate-500 text-xs">{log.postWorkoutImages.length} photos</p>
             </div>
           </div>
           {expandedSections.photos ? (
-            <ChevronUp className="w-5 h-5 text-slate-400" />
+            <ChevronUp className="w-4 h-4 text-slate-500" />
           ) : (
-            <ChevronDown className="w-5 h-5 text-slate-400" />
+            <ChevronDown className="w-4 h-4 text-slate-500" />
           )}
         </button>
         
@@ -552,7 +567,11 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
   
   // Prompt mode state
   const [promptText, setPromptText] = useState('');
-  const [parsedWorkout, setParsedWorkout] = useState<ReturnType<typeof parseWorkoutDescription> | null>(null);
+  const [parsedWorkout, setParsedWorkout] = useState<WorkoutResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState('');
+
+  const { geminiApiKey } = useStore();
 
   const filteredExercises = selectedMuscle 
     ? getExercisesByMuscleGroup(selectedMuscle).filter(e => 
@@ -594,10 +613,27 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
     }
   };
 
-  const handleParseWorkout = () => {
-    if (promptText.trim()) {
-      const result = parseWorkoutDescription(promptText);
-      setParsedWorkout(result);
+  const handleParseWorkout = async () => {
+    if (!promptText.trim()) return;
+    setAnalyzeError('');
+    setIsAnalyzing(true);
+    
+    try {
+      if (geminiApiKey) {
+        const result = await parseWorkoutWithGemini(promptText, geminiApiKey);
+        setParsedWorkout(result);
+      } else {
+        // Fallback to local parser
+        const legacy = parseWorkoutDescription(promptText);
+        setParsedWorkout({
+          exercises: legacy.exercises,
+          confidence: legacy.confidence,
+        });
+      }
+    } catch (err: any) {
+      setAnalyzeError(err.message || 'Failed to parse workout. Please check your Gemini API key in Profile settings.');
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -652,26 +688,51 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
           <div className="flex-1 overflow-auto p-4 space-y-4">
             <div>
               <label className="text-slate-400 text-sm mb-2 block">
-                Describe your workout in natural language
+                {geminiApiKey ? (
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                    Describe your workout (AI-powered)
+                  </span>
+                ) : (
+                  'Describe your workout in natural language'
+                )}
               </label>
               <textarea
                 value={promptText}
                 onChange={(e) => {
                   setPromptText(e.target.value);
                   setParsedWorkout(null);
+                  setAnalyzeError('');
                 }}
-                placeholder="e.g., 3 sets of shoulder press, 50 lbs each, set 1 had 8 reps, set 2 had 7 reps, and set 3 had 6 reps. Then 4 sets of lateral raises at 10kg, 12 reps each"
+                placeholder="e.g., 3 sets of shoulder press, 50kg each, set 1 had 8 reps, set 2 had 7, set 3 had 6. Then 4 sets of lateral raises at 10kg, 12 reps each"
                 className="w-full bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700 focus:border-purple-500 focus:outline-none resize-none h-32"
               />
             </div>
 
+            {analyzeError && (
+              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <p className="text-red-400 text-sm">{analyzeError}</p>
+              </div>
+            )}
+
             {!parsedWorkout && (
               <button
                 onClick={handleParseWorkout}
-                disabled={!promptText.trim()}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium disabled:opacity-50"
+                disabled={!promptText.trim() || isAnalyzing}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Parse Workout
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Analyzing with AI...
+                  </>
+                ) : (
+                  <>
+                    {geminiApiKey ? <Sparkles className="w-4 h-4" /> : null}
+                    Parse Workout
+                  </>
+                )}
               </button>
             )}
 
@@ -694,8 +755,8 @@ function WorkoutModal({ onClose, onAdd, onAddMultiple, onDone, suggestedMuscles 
                         : "text-red-400"
                   )}>
                     {parsedWorkout.confidence === 'high' && `✓ Parsed ${parsedWorkout.exercises.length} exercise(s)`}
-                    {parsedWorkout.confidence === 'medium' && "⚠ Partial match - some exercises not found"}
-                    {parsedWorkout.confidence === 'low' && "✗ Couldn't parse - try being more specific"}
+                    {parsedWorkout.confidence === 'medium' && "⚠ Partial match - some details may be missing"}
+                    {parsedWorkout.confidence === 'low' && "✗ Couldn't parse clearly - try being more specific"}
                   </p>
                 </div>
 
@@ -919,15 +980,32 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
     carbs: 0,
     fat: 0,
   });
-  const [aiResult, setAiResult] = useState<ReturnType<typeof analyzeNutrition> | null>(null);
+  const [aiResult, setAiResult] = useState<NutritionResult | null>(null);
   const [foodImage, setFoodImage] = useState<string | null>(null);
   const [imageDescription, setImageDescription] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState('');
   const foodImageRef = useRef<HTMLInputElement>(null);
 
-  const handleAnalyze = () => {
-    if (description.trim()) {
-      const result = analyzeNutrition(description);
-      setAiResult(result);
+  const { geminiApiKey } = useStore();
+
+  const handleAnalyze = async () => {
+    if (!description.trim()) return;
+    setAnalyzeError('');
+    setIsAnalyzing(true);
+    try {
+      if (geminiApiKey) {
+        const result = await analyzeNutritionWithGemini(description, geminiApiKey);
+        setAiResult(result);
+      } else {
+        // Fallback to legacy parser
+        const legacy = analyzeNutrition(description);
+        setAiResult(legacy as NutritionResult);
+      }
+    } catch (err: any) {
+      setAnalyzeError(err.message || 'Failed to analyze. Check your Gemini API key in Profile.');
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -942,10 +1020,27 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
     }
   };
 
-  const handleImageAnalyze = () => {
-    if (imageDescription.trim()) {
-      const result = analyzeNutrition(imageDescription);
-      setAiResult(result);
+  const handleImageAnalyze = async () => {
+    if (!foodImage) return;
+    setAnalyzeError('');
+    setIsAnalyzing(true);
+    try {
+      if (geminiApiKey) {
+        const result = await analyzeNutritionImageWithGemini(foodImage, imageDescription, geminiApiKey);
+        setAiResult(result);
+      } else {
+        // Fallback: use description if provided
+        if (imageDescription.trim()) {
+          const legacy = analyzeNutrition(imageDescription);
+          setAiResult(legacy as NutritionResult);
+        } else {
+          setAnalyzeError('Add a Gemini API key in Profile to enable photo analysis, or describe the food manually.');
+        }
+      }
+    } catch (err: any) {
+      setAnalyzeError(err.message || 'Failed to analyze image. Check your Gemini API key in Profile.');
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -964,7 +1059,7 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
     } else if (aiResult) {
       const meal: Meal = {
         id: Date.now().toString(),
-        description: mode === 'image' ? imageDescription : description,
+        description: mode === 'image' ? (imageDescription || 'Food from photo') : description,
         calories: aiResult.calories,
         protein: aiResult.protein,
         carbs: aiResult.carbs,
@@ -1036,25 +1131,46 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
           {mode === 'ai' && (
             <div className="space-y-4">
               <div>
-                <label className="text-slate-400 text-sm mb-1 block">Describe what you ate</label>
+                <label className="text-slate-400 text-sm mb-1 block flex items-center gap-1.5">
+                  {geminiApiKey && <Sparkles className="w-3.5 h-3.5 text-violet-400" />}
+                  Describe what you ate
+                </label>
                 <textarea
                   value={description}
                   onChange={(e) => {
                     setDescription(e.target.value);
                     setAiResult(null);
+                    setAnalyzeError('');
                   }}
-                  placeholder="e.g., 100g greek yogurt with 50g oats and a banana"
+                  placeholder="e.g., 200g butter chicken with 150g basmati rice"
                   className="w-full bg-slate-800 text-white px-4 py-3 rounded-xl border border-slate-700 focus:border-green-500 focus:outline-none resize-none h-24"
                 />
               </div>
+
+              {analyzeError && (
+                <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-red-400 text-sm">{analyzeError}</p>
+                </div>
+              )}
               
               {!aiResult && (
                 <button
                   onClick={handleAnalyze}
-                  disabled={!description.trim()}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50"
+                  disabled={!description.trim() || isAnalyzing}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Analyze Nutrition
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Analyzing with AI...
+                    </>
+                  ) : (
+                    <>
+                      {geminiApiKey ? <Sparkles className="w-4 h-4" /> : null}
+                      Analyze Nutrition
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -1098,34 +1214,54 @@ function MealModal({ onClose, onAdd }: MealModalProps) {
                 <>
                   <div>
                     <label className="text-slate-400 text-sm mb-1 block">
-                      Describe what's in the photo
+                      Describe what's in the photo (optional)
                     </label>
                     <textarea
                       value={imageDescription}
                       onChange={(e) => {
                         setImageDescription(e.target.value);
                         setAiResult(null);
+                        setAnalyzeError('');
                       }}
                       placeholder="e.g., 300g rice, 150g chicken, broccoli"
                       className="w-full bg-slate-800 text-white px-3 py-2 rounded-xl border border-slate-700 focus:border-green-500 focus:outline-none resize-none h-16"
                     />
                   </div>
 
+                  {analyzeError && (
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <p className="text-red-400 text-sm">{analyzeError}</p>
+                    </div>
+                  )}
+
                   {!aiResult && (
                     <button
                       onClick={handleImageAnalyze}
-                      disabled={!imageDescription.trim()}
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50"
+                      disabled={isAnalyzing}
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                     >
-                      Analyze with Description
+                      {isAnalyzing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Analyzing photo with AI...
+                        </>
+                      ) : (
+                        <>
+                          {geminiApiKey ? <Sparkles className="w-4 h-4" /> : null}
+                          {geminiApiKey ? 'Analyze Photo' : 'Analyze with Description'}
+                        </>
+                      )}
                     </button>
                   )}
                 </>
               )}
 
-              <p className="text-slate-500 text-xs text-center">
-                💡 Adding a description with approximate quantities (like "150g chicken") gives more accurate results
-              </p>
+              {!geminiApiKey && (
+                <p className="text-slate-500 text-xs text-center">
+                  💡 Add a Gemini API key in Profile to enable real photo analysis
+                </p>
+              )}
             </div>
           )}
 

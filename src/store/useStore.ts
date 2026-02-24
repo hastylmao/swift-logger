@@ -17,6 +17,10 @@ interface AppState {
   // User
   profile: UserProfile | null;
   setProfile: (profile: UserProfile) => void;
+
+  // Gemini API Key
+  geminiApiKey: string | null;
+  setGeminiApiKey: (key: string | null) => void;
   
   // Splits
   activeSplit: Split | null;
@@ -82,6 +86,7 @@ export const useStore = create<AppState>()(
       customSplits: [],
       logs: {},
       unlockedAchievements: [],
+      geminiApiKey: null,
 
       // Reset Action Implementation (Added)
       reset: () => set({
@@ -93,6 +98,8 @@ export const useStore = create<AppState>()(
       }),
 
       setProfile: (profile) => set({ profile }),
+
+      setGeminiApiKey: (key) => set({ geminiApiKey: key }),
 
       setActiveSplit: (split) => set({ activeSplit: split }),
 

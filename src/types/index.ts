@@ -19,6 +19,11 @@ export interface UserProfile {
   };
 }
 
+// Gemini API key stored separately from profile
+export interface AppSettings {
+  geminiApiKey?: string;
+}
+
 export interface Split {
   id: string;
   name: string;

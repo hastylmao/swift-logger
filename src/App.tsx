@@ -155,14 +155,14 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-lg border-b border-slate-800/50">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center">
+      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-xl border-b border-white/5">
+        <div className="px-4 py-3 flex items-center justify-between max-w-lg mx-auto">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
               <Dumbbell className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
+              <h1 className="text-base font-bold bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent leading-none">
                 Swift Logger
               </h1>
             </div>
@@ -170,16 +170,16 @@ export default function App() {
           
           <div className="flex items-center gap-2">
             {currentStreak > 0 && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 rounded-full">
-                <Flame className="w-4 h-4 text-orange-400" />
-                <span className="text-sm font-medium text-orange-400">{currentStreak}</span>
+              <div className="flex items-center gap-1 px-2.5 py-1 bg-orange-500/15 border border-orange-500/25 rounded-full">
+                <Flame className="w-3.5 h-3.5 text-orange-400" />
+                <span className="text-xs font-semibold text-orange-400">{currentStreak}</span>
               </div>
             )}
             
             {userId && (
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                className="p-2 rounded-xl bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition-all border border-white/5"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -189,31 +189,35 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="px-4 py-4">
+      <main className="px-4 py-4 max-w-lg mx-auto">
         {renderView()}
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800/50 z-50">
-        <div className="flex justify-around items-center py-2 px-1 max-w-lg mx-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon
-            const isActive = activeView === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveView(item.id)}
-                className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl transition-all ${
-                  isActive 
-                    ? 'text-cyan-400 bg-cyan-400/10' 
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <Icon className={`w-5 h-5 ${isActive ? 'scale-110' : ''} transition-transform`} />
-                <span className="text-[10px] font-medium">{item.label}</span>
-              </button>
-            )
-          })}
+      <nav className="fixed bottom-0 left-0 right-0 z-50">
+        <div className="bg-slate-900/90 backdrop-blur-xl border-t border-white/5 shadow-2xl">
+          <div className="flex justify-around items-center py-2 px-2 max-w-lg mx-auto">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              const isActive = activeView === item.id
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveView(item.id)}
+                  className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-2xl transition-all duration-200 ${
+                    isActive 
+                      ? 'text-cyan-400' 
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`p-1.5 rounded-xl transition-all ${isActive ? 'bg-cyan-400/15' : ''}`}>
+                    <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110' : ''}`} />
+                  </div>
+                  <span className={`text-[10px] font-medium ${isActive ? 'text-cyan-400' : ''}`}>{item.label}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       </nav>
     </div>
